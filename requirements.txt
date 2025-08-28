@@ -1,8 +1,8 @@
 git+https://github.com/mlflow/mlflow.git@databricks-trace-archival
+https://ml-team-public-read.s3.us-west-2.amazonaws.com/mlflow-tracing/wheels/databricks_ingest-0.0.13-py3-none-any.whl
 fastapi
 uvicorn
 pandas
 pydantic
 protobuf
 opentelemetry-proto
-zerobus_sdk

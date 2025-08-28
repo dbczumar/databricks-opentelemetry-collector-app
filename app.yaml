@@ -10,6 +10,10 @@ command: [
 env:
   - name: DATABRICKS_TOKEN
     valueFrom: databricks-token
+  - name: DATABRICKS_WORKSPACE_URL
+    value: "https://your-workspace.databricks.com"
+  - name: DATABRICKS_INGEST_URL
+    value: "https://your-workspace-id.ingest.cloud.databricks.com"
   - name: MLFLOW_EXPERIMENT_NAME
     value: "/Shared/otel-traces"
   - name: UC_CATALOG_NAME

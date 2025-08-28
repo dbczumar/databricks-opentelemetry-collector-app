@@ -14,6 +14,11 @@ logging.getLogger("uvicorn.error").setLevel(logging.ERROR)
 # OpenTelemetry constants
 OTLP_TRACES_PATH = "/v1/traces"
 
+# Global configuration variables
+UC_CATALOG_NAME = ""
+UC_SCHEMA_NAME = ""
+UC_TABLE_PREFIX_NAME = ""
+
 # Create FastAPI app
 app = FastAPI(
     title="OTEL Service",
@@ -27,11 +32,14 @@ async def startup_event():
     """
     Startup hook for initialization tasks.
     """
-    # Log configuration
-    catalog = os.environ.get("UC_CATALOG_NAME", "main")
-    schema = os.environ.get("UC_SCHEMA_NAME", "default")
-    table_prefix = os.environ.get("UC_TABLE_PREFIX_NAME", "otel")
-    logging.info(f"Configured for UC table: {catalog}.{schema}.{table_prefix}_spans")
+    global UC_CATALOG_NAME, UC_SCHEMA_NAME, UC_TABLE_PREFIX_NAME
+    
+    # Set global configuration from environment
+    UC_CATALOG_NAME = os.environ.get("UC_CATALOG_NAME", "main")
+    UC_SCHEMA_NAME = os.environ.get("UC_SCHEMA_NAME", "default")
+    UC_TABLE_PREFIX_NAME = os.environ.get("UC_TABLE_PREFIX_NAME", "otel")
+    
+    logging.info(f"Configured for UC table: {UC_CATALOG_NAME}.{UC_SCHEMA_NAME}.{UC_TABLE_PREFIX_NAME}_spans")
 
 # Create OTel router
 otel_router = APIRouter(prefix=OTLP_TRACES_PATH, tags=["OpenTelemetry"])
@@ -91,11 +99,7 @@ async def export_traces(
     logging.info(f"Received {num_spans} spans")
     
     # Export spans to Delta table using Zerobus
-    catalog = os.environ.get("UC_CATALOG_NAME", "main")
-    schema = os.environ.get("UC_SCHEMA_NAME", "default")
-    table_prefix = os.environ.get("UC_TABLE_PREFIX_NAME", "otel")
-    
-    success = export_otel_spans_to_delta(parsed_request, catalog, schema, table_prefix)
+    success = export_otel_spans_to_delta(parsed_request, UC_CATALOG_NAME, UC_SCHEMA_NAME, UC_TABLE_PREFIX_NAME)
     
     if not success:
         logging.warning("Failed to export spans to Delta table")

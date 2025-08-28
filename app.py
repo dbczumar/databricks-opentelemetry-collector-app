@@ -1,5 +1,4 @@
 import pandas as pd
-import os
 from typing import Any
 from fastapi import FastAPI, APIRouter, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -7,17 +6,13 @@ from google.protobuf.message import DecodeError
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 import logging
 
+from constants import Constants
 from exporter import export_otel_spans_to_delta
 
 logging.getLogger("uvicorn.error").setLevel(logging.ERROR)
 
 # OpenTelemetry constants
 OTLP_TRACES_PATH = "/v1/traces"
-
-# Global configuration variables
-UC_CATALOG_NAME = ""
-UC_SCHEMA_NAME = ""
-UC_TABLE_PREFIX_NAME = ""
 
 # Create FastAPI app
 app = FastAPI(
@@ -32,14 +27,26 @@ async def startup_event():
     """
     Startup hook for initialization tasks.
     """
-    global UC_CATALOG_NAME, UC_SCHEMA_NAME, UC_TABLE_PREFIX_NAME
+    # Initialize all configuration constants
+    Constants.initialize()
+    logging.info("Service configuration initialized successfully")
     
-    # Set global configuration from environment
-    UC_CATALOG_NAME = os.environ.get("UC_CATALOG_NAME", "main")
-    UC_SCHEMA_NAME = os.environ.get("UC_SCHEMA_NAME", "default")
-    UC_TABLE_PREFIX_NAME = os.environ.get("UC_TABLE_PREFIX_NAME", "otel")
+    # Test Zerobus connection at startup
+    from exporter import ZerobusStreamFactory
+    from zerobus_sdk import TableProperties
     
-    logging.info(f"Configured for UC table: {UC_CATALOG_NAME}.{UC_SCHEMA_NAME}.{UC_TABLE_PREFIX_NAME}_spans")
+    table_name = f"{Constants.UC_CATALOG_NAME}.{Constants.UC_SCHEMA_NAME}.{Constants.UC_TABLE_PREFIX_NAME}_spans"
+    table_properties = TableProperties(
+        table_name=table_name,
+        catalog=Constants.UC_CATALOG_NAME,
+        schema=Constants.UC_SCHEMA_NAME,
+        table=f"{Constants.UC_TABLE_PREFIX_NAME}_spans"
+    )
+    
+    # Get or create stream to validate configuration
+    factory = ZerobusStreamFactory.get_instance(table_properties)
+    stream = factory.get_or_create_stream()
+    logging.info(f"Successfully connected to Zerobus for table {table_name}")
 
 # Create OTel router
 otel_router = APIRouter(prefix=OTLP_TRACES_PATH, tags=["OpenTelemetry"])
@@ -99,7 +106,12 @@ async def export_traces(
     logging.info(f"Received {num_spans} spans")
     
     # Export spans to Delta table using Zerobus
-    success = export_otel_spans_to_delta(parsed_request, UC_CATALOG_NAME, UC_SCHEMA_NAME, UC_TABLE_PREFIX_NAME)
+    success = export_otel_spans_to_delta(
+        parsed_request, 
+        Constants.UC_CATALOG_NAME, 
+        Constants.UC_SCHEMA_NAME, 
+        Constants.UC_TABLE_PREFIX_NAME
+    )
     
     if not success:
         logging.warning("Failed to export spans to Delta table")

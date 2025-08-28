@@ -1,5 +1,5 @@
 git+https://github.com/mlflow/mlflow.git@databricks-trace-archival
-https://ml-team-public-read.s3.us-west-2.amazonaws.com/mlflow-tracing/wheels/databricks_ingest-0.0.13-py3-none-any.whl
+https://ml-team-public-read.s3.us-west-2.amazonaws.com/wheels/mlflow/dev/edwin.he/databricks_zerobus-0.0.16-py3-none-any.whl
 fastapi
 uvicorn
 pandas

@@ -8,44 +8,25 @@ using the Zerobus streaming ingestion SDK.
 import atexit
 import json
 import logging
-import os
 import threading
 import time
 from typing import TYPE_CHECKING, Optional
 
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+from zerobus_sdk import TableProperties, ZerobusSdk, StreamState
 
 _logger = logging.getLogger(__name__)
-
-# Type checking imports
-if TYPE_CHECKING:
-    try:
-        from zerobus_sdk import TableProperties, ZerobusSdk, StreamState
-    except ImportError:
-        from typing import Any
-        TableProperties = Any
-        ZerobusSdk = Any
-        StreamState = Any
 
 
 def import_zerobus_sdk_classes():
     """
-    Import Zerobus SDK classes with proper error handling.
+    Import Zerobus SDK classes.
     
     Returns:
         Tuple of (TableProperties, StreamState) classes
-        
-    Raises:
-        ImportError: If zerobus_sdk is not available
     """
-    try:
-        from zerobus_sdk import TableProperties, StreamState
-        return TableProperties, StreamState
-    except ImportError:
-        raise ImportError(
-            "The `zerobus_sdk` package is required for trace archival. "
-            "Please install it or contact your Databricks representative."
-        )
+    from zerobus_sdk import TableProperties, StreamState
+    return TableProperties, StreamState
 
 
 def create_archival_zerobus_sdk():
@@ -54,31 +35,44 @@ def create_archival_zerobus_sdk():
     
     Returns:
         ZerobusSdk: Configured SDK instance ready for trace archival operations
-        
-    Raises:
-        ImportError: If the zerobus_sdk package is not available
     """
-    try:
-        from zerobus_sdk import ZerobusSdk
-    except ImportError:
-        raise ImportError(
-            "The `zerobus_sdk` package is required for trace archival. "
-            "Please install it or contact your Databricks representative."
-        )
+    from zerobus_sdk import ZerobusSdk
+    from constants import Constants
     
-    # Get configuration from environment variables
-    ingest_url = os.environ.get("DATABRICKS_INGEST_URL")
-    workspace_url = os.environ.get("DATABRICKS_WORKSPACE_URL")
-    token = os.environ.get("DATABRICKS_TOKEN")
+    # Use configuration from Constants (already validated at startup)
+    _logger.debug(
+        f"Creating ZerobusSdk with ingest URL: {Constants.DATABRICKS_INGEST_URL}, "
+        f"workspace URL: {Constants.DATABRICKS_WORKSPACE_URL}"
+    )
+    return ZerobusSdk(
+        Constants.DATABRICKS_INGEST_URL,
+        Constants.DATABRICKS_WORKSPACE_URL,
+        Constants.DATABRICKS_TOKEN
+    )
+
+
+def _decode_anyvalue(any_value):
+    """
+    Decode an OTel protobuf AnyValue using WhichOneof.
     
-    if not all([ingest_url, workspace_url, token]):
-        raise ValueError(
-            "Missing required environment variables: "
-            "DATABRICKS_INGEST_URL, DATABRICKS_WORKSPACE_URL, DATABRICKS_TOKEN"
-        )
+    Args:
+        any_value: The OTel protobuf AnyValue message to decode.
+        
+    Returns:
+        The decoded value.
+    """
+    value_type = any_value.WhichOneof("value")
+    if not value_type:
+        return None
     
-    _logger.debug(f"Creating ZerobusSdk with ingest URL: {ingest_url}, workspace URL: {workspace_url}")
-    return ZerobusSdk(ingest_url, workspace_url, token)
+    # Handle complex types that need recursion
+    if value_type == "array_value":
+        return [_decode_anyvalue(v) for v in any_value.array_value.values]
+    elif value_type == "kvlist_value":
+        return {kv.key: _decode_anyvalue(kv.value) for kv in any_value.kvlist_value.values}
+    else:
+        # For simple types, just get the attribute directly
+        return getattr(any_value, value_type)
 
 
 def convert_otel_proto_to_delta_spans(parsed_request: ExportTraceServiceRequest) -> list:
@@ -91,13 +85,7 @@ def convert_otel_proto_to_delta_spans(parsed_request: ExportTraceServiceRequest)
     Returns:
         List of Delta proto spans ready for ingestion
     """
-    try:
-        from mlflow.genai.experimental.databricks_trace_otel_pb2 import Span as DeltaProtoSpan
-    except ImportError:
-        raise ImportError(
-            "MLflow is required for Delta proto span conversion. "
-            "Please install mlflow."
-        )
+    from mlflow.genai.experimental.databricks_trace_otel_pb2 import Span as DeltaProtoSpan
     
     delta_proto_spans = []
     
@@ -106,22 +94,7 @@ def convert_otel_proto_to_delta_spans(parsed_request: ExportTraceServiceRequest)
         resource_attributes = {}
         if resource_span.resource and resource_span.resource.attributes:
             for attr in resource_span.resource.attributes:
-                # Convert attribute value based on type
-                if attr.value.HasField("string_value"):
-                    value = attr.value.string_value
-                elif attr.value.HasField("bool_value"):
-                    value = attr.value.bool_value
-                elif attr.value.HasField("int_value"):
-                    value = attr.value.int_value
-                elif attr.value.HasField("double_value"):
-                    value = attr.value.double_value
-                elif attr.value.HasField("array_value"):
-                    value = [v for v in attr.value.array_value.values]
-                elif attr.value.HasField("kvlist_value"):
-                    value = {kv.key: kv.value for kv in attr.value.kvlist_value.values}
-                else:
-                    value = None
-                resource_attributes[attr.key] = value
+                resource_attributes[attr.key] = _decode_anyvalue(attr.value)
         
         for scope_span in resource_span.scope_spans:
             for otel_span in scope_span.spans:
@@ -156,21 +129,12 @@ def convert_otel_proto_to_delta_spans(parsed_request: ExportTraceServiceRequest)
                 
                 # Process span attributes
                 for attr in otel_span.attributes:
-                    if attr.value.HasField("string_value"):
-                        value = attr.value.string_value
-                    elif attr.value.HasField("bool_value"):
-                        value = json.dumps(attr.value.bool_value)
-                    elif attr.value.HasField("int_value"):
-                        value = json.dumps(attr.value.int_value)
-                    elif attr.value.HasField("double_value"):
-                        value = json.dumps(attr.value.double_value)
-                    elif attr.value.HasField("array_value"):
-                        value = json.dumps([str(v) for v in attr.value.array_value.values])
-                    elif attr.value.HasField("kvlist_value"):
-                        value = json.dumps({kv.key: str(kv.value) for kv in attr.value.kvlist_value.values})
+                    value = _decode_anyvalue(attr.value)
+                    # Convert to string for Delta proto (attributes are stored as strings)
+                    if isinstance(value, str):
+                        delta_proto.attributes[attr.key] = value
                     else:
-                        value = ""
-                    delta_proto.attributes[attr.key] = value
+                        delta_proto.attributes[attr.key] = json.dumps(value)
                 
                 delta_proto.dropped_attributes_count = otel_span.dropped_attributes_count or 0
                 
@@ -183,11 +147,12 @@ def convert_otel_proto_to_delta_spans(parsed_request: ExportTraceServiceRequest)
                         "dropped_attributes_count": event.dropped_attributes_count or 0,
                     }
                     for attr in event.attributes:
-                        if attr.value.HasField("string_value"):
-                            event_dict["attributes"][attr.key] = attr.value.string_value
+                        value = _decode_anyvalue(attr.value)
+                        # Convert to string for event attributes
+                        if isinstance(value, str):
+                            event_dict["attributes"][attr.key] = value
                         else:
-                            # Serialize non-string values to JSON
-                            event_dict["attributes"][attr.key] = json.dumps(attr.value)
+                            event_dict["attributes"][attr.key] = json.dumps(value)
                     
                     delta_proto.events.append(DeltaProtoSpan.Event(**event_dict))
                 
@@ -217,7 +182,7 @@ class ZerobusStreamFactory:
     _atexit_registered = False
     
     @classmethod
-    def get_instance(cls, table_properties: "TableProperties") -> "ZerobusStreamFactory":
+    def get_instance(cls, table_properties: TableProperties) -> "ZerobusStreamFactory":
         """
         Get or create a singleton factory instance for the given table.
         """
@@ -247,7 +212,7 @@ class ZerobusStreamFactory:
                     _logger.warning(f"Error closing streams for table {table_name}: {e}")
             cls._instances.clear()
     
-    def __init__(self, table_properties: "TableProperties"):
+    def __init__(self, table_properties: TableProperties):
         """
         Initialize factory with table properties.
         """

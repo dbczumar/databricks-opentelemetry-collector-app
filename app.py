@@ -1,14 +1,18 @@
 import pandas as pd
+import os
 from typing import Any
 from fastapi import FastAPI, APIRouter, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from google.protobuf.message import DecodeError
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 import logging
+
+from exporter import export_otel_spans_to_delta
 
 logging.getLogger("uvicorn.error").setLevel(logging.ERROR)
 
 # OpenTelemetry constants
 OTLP_TRACES_PATH = "/v1/traces"
-MLFLOW_EXPERIMENT_ID_HEADER = "X-MLflow-Experiment-Id"
 
 # Create FastAPI app
 app = FastAPI(
@@ -16,6 +20,18 @@ app = FastAPI(
     description="OpenTelemetry trace collection service",
     version="1.0.0",
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Startup hook for initialization tasks.
+    """
+    # Log configuration
+    catalog = os.environ.get("UC_CATALOG_NAME", "main")
+    schema = os.environ.get("UC_SCHEMA_NAME", "default")
+    table_prefix = os.environ.get("UC_TABLE_PREFIX_NAME", "otel")
+    logging.info(f"Configured for UC table: {catalog}.{schema}.{table_prefix}_spans")
 
 # Create OTel router
 otel_router = APIRouter(prefix=OTLP_TRACES_PATH, tags=["OpenTelemetry"])
@@ -32,7 +48,6 @@ class OTelExportTraceServiceResponse(BaseModel):
 async def export_traces(
     request: Request,
     response: Response,
-    x_mlflow_experiment_id: str = Header(..., alias=MLFLOW_EXPERIMENT_ID_HEADER),
     content_type: str = Header(None),
 ) -> OTelExportTraceServiceResponse:
     """
@@ -41,7 +56,6 @@ async def export_traces(
     Args:
         request: OTel ExportTraceServiceRequest in protobuf format
         response: FastAPI Response object for setting headers
-        x_mlflow_experiment_id: Required header containing the experiment ID
         content_type: Content-Type header from the request
     
     Returns:
@@ -58,9 +72,34 @@ async def export_traces(
     response.headers["Content-Type"] = "application/x-protobuf"
     
     body = await request.body()
+    parsed_request = ExportTraceServiceRequest()
     
-    # For this demo, just log the received data
-    logging.info(f"Received trace data for experiment {x_mlflow_experiment_id}: {len(body)} bytes")
+    try:
+        parsed_request.ParseFromString(body)
+    except DecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OpenTelemetry protobuf format",
+        )
+    
+    # Log the received trace data
+    num_spans = sum(
+        len(scope_span.spans)
+        for resource_span in parsed_request.resource_spans
+        for scope_span in resource_span.scope_spans
+    )
+    logging.info(f"Received {num_spans} spans")
+    
+    # Export spans to Delta table using Zerobus
+    catalog = os.environ.get("UC_CATALOG_NAME", "main")
+    schema = os.environ.get("UC_SCHEMA_NAME", "default")
+    table_prefix = os.environ.get("UC_TABLE_PREFIX_NAME", "otel")
+    
+    success = export_otel_spans_to_delta(parsed_request, catalog, schema, table_prefix)
+    
+    if not success:
+        logging.warning("Failed to export spans to Delta table")
+        # Return success anyway to avoid blocking the client
     
     return OTelExportTraceServiceResponse()
 
@@ -77,4 +116,4 @@ app.include_router(otel_router)
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8123, log_level="info")

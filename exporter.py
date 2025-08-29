@@ -9,13 +9,11 @@ import atexit
 import json
 import logging
 import threading
-import time
-from typing import TYPE_CHECKING, Optional
 
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
     ExportTraceServiceRequest,
 )
-from zerobus_sdk import TableProperties, ZerobusSdk, StreamState
+from zerobus_sdk import TableProperties, StreamState
 
 from constants import Constants, OTEL_SPAN_KIND_MAP, OTEL_STATUS_CODE_MAP
 
@@ -29,7 +27,7 @@ def import_zerobus_sdk_classes():
     Returns:
         Tuple of (TableProperties, StreamState) classes
     """
-    from zerobus_sdk import TableProperties, StreamState
+    from zerobus_sdk import TableProperties
 
     return TableProperties, StreamState
 

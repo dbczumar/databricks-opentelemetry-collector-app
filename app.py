@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
     logger.info(
         f"Creating/verifying trace destination for catalog={Constants.UC_CATALOG_NAME}, schema={Constants.UC_SCHEMA_NAME}, prefix={Constants.UC_TABLE_PREFIX_NAME}"
     )
-    logger.info(f"This may take a while as it creates the table if it doesn't exist...")
+    logger.info("This may take a while as it creates the table if it doesn't exist...")
     storage_config = client.create_trace_destination(
         experiment_id=experiment_id,
         catalog=Constants.UC_CATALOG_NAME,
@@ -84,10 +84,6 @@ async def lifespan(app: FastAPI):
     logger.info(f"Full table name from config: {full_table_name}")
 
     logger.info("Setting up Zerobus connection...")
-
-    table_properties = TableProperties(
-        table_name=full_table_name, descriptor_proto=DeltaProtoSpan.DESCRIPTOR
-    )
 
     global executor
     executor = ThreadPoolExecutor(max_workers=8, initializer=init_thread_stream)

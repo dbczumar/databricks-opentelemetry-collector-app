@@ -1,5 +1,5 @@
 resources:
   secrets:
-    secret: # resource key
+    secret:
       scope: otel-traces
       key: databricks-token

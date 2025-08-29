@@ -18,18 +18,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create FastAPI app
-app = FastAPI(
-    title="OTEL Service",
-    description="OpenTelemetry trace collection service",
-    version="1.0.0",
-)
 
-
-@app.on_event("startup")
-async def startup_event():
+async def lifespan(app: FastAPI):
     """
-    Startup hook for initialization tasks.
+    Lifespan event handler for initialization tasks.
     """
     # Initialize all configuration constants
     Constants.initialize()
@@ -87,6 +79,17 @@ async def startup_event():
     factory = ZerobusStreamFactory.get_instance(table_properties)
     stream = factory.get_or_create_stream()
     logger.info(f"Successfully connected to Zerobus for table {full_table_name}")
+    
+    yield
+
+
+# Create FastAPI app
+app = FastAPI(
+    title="OTEL Service",
+    description="OpenTelemetry trace collection service",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
 # Create OTel router
 otel_router = APIRouter(prefix=OTLP_TRACES_PATH, tags=["OpenTelemetry"])
@@ -172,4 +175,4 @@ app.include_router(otel_router)
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8123, log_level="info")
+    uvicorn.run("app:app", host="0.0.0.0", port=8123, workers=16, log_level="info")

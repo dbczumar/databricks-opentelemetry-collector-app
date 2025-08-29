@@ -6,6 +6,7 @@ from google.protobuf.message import DecodeError
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 import logging
 import sys
+import asyncio
 
 from constants import Constants, OTLP_TRACES_PATH
 from exporter import export_otel_spans_to_delta
@@ -148,8 +149,11 @@ async def export_traces(
     )
     logger.info(f"Received {num_spans} spans")
     
-    # Export spans to Delta table using Zerobus
-    success = export_otel_spans_to_delta(
+    # Export spans to Delta table using Zerobus (run in thread pool to avoid blocking)
+    loop = asyncio.get_event_loop()
+    success = await loop.run_in_executor(
+        None,
+        export_otel_spans_to_delta,
         parsed_request, 
         Constants.UC_CATALOG_NAME, 
         Constants.UC_SCHEMA_NAME, 

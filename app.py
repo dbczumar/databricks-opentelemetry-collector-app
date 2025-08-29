@@ -7,6 +7,7 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTrace
 import logging
 import sys
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from constants import Constants, OTLP_TRACES_PATH
 from exporter import export_otel_spans_to_delta
@@ -18,6 +19,24 @@ logging.basicConfig(
     stream=sys.stdout
 )
 logger = logging.getLogger(__name__)
+
+# Global thread pool executor with pre-seeded streams
+executor = None
+
+
+def init_thread_stream():
+    """Initialize stream for a thread pool worker."""
+    from exporter import ZerobusStreamFactory
+    from zerobus_sdk import TableProperties
+    from mlflow.genai.experimental.databricks_trace_otel_pb2 import Span as DeltaProtoSpan
+    table_properties = TableProperties(
+        table_name=Constants.UC_FULL_TABLE_NAME,
+        descriptor_proto=DeltaProtoSpan.DESCRIPTOR
+    )
+    factory = ZerobusStreamFactory.get_instance(table_properties)
+    stream = factory.get_or_create_stream()
+    logger.info(f"Pre-seeded stream for thread in table {Constants.UC_FULL_TABLE_NAME}")
+    return stream
 
 
 async def lifespan(app: FastAPI):
@@ -75,13 +94,30 @@ async def lifespan(app: FastAPI):
         table_name=full_table_name,
         descriptor_proto=DeltaProtoSpan.DESCRIPTOR
     )
+
+    # Create thread pool executor and pre-seed streams AFTER everything is set up
+    global executor
+    executor = ThreadPoolExecutor(max_workers=8, initializer=init_thread_stream)
+    logger.info("Created thread pool executor with 8 workers")
     
-    # Get or create stream to validate configuration
-    factory = ZerobusStreamFactory.get_instance(table_properties)
-    stream = factory.get_or_create_stream()
-    logger.info(f"Successfully connected to Zerobus for table {full_table_name}")
+    # Force initialization of all threads by submitting dummy tasks
+    logger.info("Pre-seeding streams by warming up thread pool...")
+    futures = []
+    for i in range(8):
+        future = executor.submit(lambda: None)  # Submit dummy task to trigger initializer
+        futures.append(future)
+    
+    # Wait for all threads to be initialized
+    for future in futures:
+        future.result()
+    
+    logger.info("Thread pool warmed up - all streams pre-seeded")
     
     yield
+    
+    # Cleanup
+    if executor:
+        executor.shutdown(wait=True)
 
 
 # Create FastAPI app
@@ -149,10 +185,10 @@ async def export_traces(
     )
     logger.info(f"Received {num_spans} spans")
     
-    # Export spans to Delta table using Zerobus (run in thread pool to avoid blocking)
+    # Export spans to Delta table using Zerobus (run in pre-seeded thread pool)
     loop = asyncio.get_event_loop()
     success = await loop.run_in_executor(
-        None,
+        executor,
         export_otel_spans_to_delta,
         parsed_request, 
         Constants.UC_CATALOG_NAME, 

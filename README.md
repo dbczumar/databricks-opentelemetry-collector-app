@@ -1,0 +1,153 @@
+# OpenTelemetry Delta Collector Databricks App
+
+## Setup
+
+### App Environment Configuration
+
+Update the environment variables in `app.yaml`:
+
+```yaml
+env:
+  - name: DATABRICKS_TOKEN
+    valueFrom: databricks-token  # References secret (see below)
+  - name: DATABRICKS_HOST
+    value: "https://your-workspace.databricks.com"  # Update with your workspace URL
+  - name: MLFLOW_EXPERIMENT_NAME
+    value: "/Shared/otel-traces"  # Update if using different experiment
+  - name: UC_CATALOG_NAME
+    value: "main"  # Update with your catalog name
+  - name: UC_SCHEMA_NAME
+    value: "default"  # Update with your schema name
+  - name: UC_TABLE_PREFIX_NAME
+    value: "otel"  # Update with your desired table name prefix
+```
+
+### Setting up the Databricks Token Secret
+
+The `DATABRICKS_TOKEN` in `app.yaml` references a secret named `databricks-token`. You need to create and populate this secret with a Databricks Personal Access Token (PAT).
+
+1. Install the Databricks SDK:
+   ```bash
+   pip install databricks-sdk
+   ```
+
+2. Install the Databricks CLI according to the [installation instructions](https://docs.databricks.com/aws/en/dev-tools/cli/install):
+   ```bash
+   # Example using Homebrew on Linux or macOS
+   brew tap databricks/tap
+   brew install databricks
+   ```
+
+3. Authenticate with Databricks using OAuth (required for querying Databricks Apps):
+   ```bash
+   databricks auth login --host https://your-workspace.databricks.com
+   # This will open your browser for OAuth authentication
+   ```
+   
+   **Note:** [OAuth authentication](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-u2m?language=Python#automatic-authorization-with-unified-client-authentication) is required to query Databricks Apps.
+
+4. Create a Personal Access Token (PAT). See [Databricks PAT Documentation](https://docs.databricks.com/en/dev-tools/auth/pat.html).
+   
+   **Note:** The PAT token is required in order to provide the App with access to a UC Schema with direct delta ingest.
+
+5. Create a secret scope:
+   ```bash
+   databricks secrets create-scope opentelemetry-collector-app
+   ```
+
+6. Store your Databricks Personal Access Token (PAT) as a secret:
+   ```bash
+   databricks secrets put-secret opentelemetry-collector-app databricks-token --string-value "your-actual-token-here"
+   ```
+
+This stores your Databricks token securely so it can be referenced by the `valueFrom: databricks-token` in `app.yaml`.
+
+### Setting up Unity Catalog for Trace Storage
+
+The OpenTelemetry service stores trace data in Unity Catalog tables. Before deploying the app, ensure you have created a Unity Catalog catalog and schema that match the values specified in your `app.yaml`:
+
+- `UC_CATALOG_NAME`: The catalog where trace tables will be created
+- `UC_SCHEMA_NAME`: The schema within that catalog where trace tables will be stored
+- `UC_TABLE_PREFIX_NAME`: The prefix for the trace tables (the service will create tables like `<prefix>_spans`)
+
+The service will automatically create the necessary tables within your specified catalog and schema on first startup.
+
+See [Unity Catalog documentation](https://docs.databricks.com/en/data-governance/unity-catalog/index.html) for creating and managing catalogs and schemas.
+
+## Deploying the App
+
+Deploy the OpenTelemetry Delta Collector to Databricks Apps using the Databricks CLI:
+
+1. Sync your app files to the Databricks workspace:
+   ```bash
+   databricks sync . /Workspace/Users/your-email@company.com/otel-app
+   ```
+
+2. Deploy the app:
+   ```bash
+   databricks apps deploy otel-collector \
+     --source-code-path /Workspace/Users/your-email@company.com/otel-app
+   ```
+
+   Replace `otel-collector` with your desired app name and update the source code path to match your workspace location.
+
+3. Monitor the deployment:
+   ```bash
+   databricks apps get otel-collector
+   ```
+
+   This will show the app status and URL once deployed.
+
+
+## Sending Spans to the Deployed App
+
+Once your app is deployed, you can send OpenTelemetry spans to it using the following Python code.
+
+**Note:** OAuth authentication is required to send spans to Databricks Apps. First authenticate using:
+```bash
+databricks auth login --host https://your-workspace.databricks.com
+```
+See [OAuth authentication documentation](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-u2m?language=Python#automatic-authorization-with-unified-client-authentication) for more details.
+
+Replace `https://your-app-name.databricksapps.com/v1/traces` with your actual Databricks App URL:
+
+```python
+import os
+import time
+from databricks.sdk import WorkspaceClient
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# Set endpoint via environment variable
+os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = "https://your-app-name.databricksapps.com/v1/traces"
+
+# Set up Databricks Workspace Client with OAuth authentication
+databricks_workspace_client = WorkspaceClient()
+
+# Set up OpenTelemetry Tracer
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(
+    headers={
+        "content-type": "application/x-protobuf",
+        # Retrieve the Databricks OAuth token from the Databricks Workspace Client
+        # and set it as a header
+        **databricks_workspace_client.config.authenticate()
+    }
+)))
+trace.set_tracer_provider(provider)
+tracer = trace.get_tracer(__name__)
+
+# Send test spans
+with tracer.start_as_current_span("test_operation") as span:
+    span.set_attribute("test", "hello")
+    time.sleep(0.1)
+    with tracer.start_as_current_span("child_operation") as child:
+        child.set_attribute("nested", True)
+        time.sleep(0.05)
+
+# Flush the spans
+provider.force_flush()
+print("✓ Spans sent")
+```

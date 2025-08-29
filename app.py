@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -31,6 +32,10 @@ logger = logging.getLogger(__name__)
 logging.getLogger("zerobus_sdk").setLevel(logging.WARNING)
 
 executor = None
+
+# explicitly unset to prevent oauth from conflicting with pat token
+os.environ.pop('DATABRICKS_CLIENT_ID', None)
+os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
 
 
 def init_thread_stream():

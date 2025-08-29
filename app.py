@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 # Reduce verbosity of zerobus_sdk logs
 logging.getLogger("zerobus_sdk").setLevel(logging.WARNING)
 
+logger.warning("MLFLOW VERSION: %s", mlflow.__version__)
+
 executor = None
 
 
@@ -185,14 +187,6 @@ async def export_traces(
         )
 
     return OTelExportTraceServiceResponse()
-
-
-@app.get("/")
-def hello_world():
-    chart_data = pd.DataFrame(
-        {"Apps": [x for x in range(30)], "Fun with data": [2**x for x in range(30)]}
-    )
-    return f"<h1>Hello, World!</h1> {chart_data.to_html(index=False)}"
 
 
 app.include_router(otel_router)

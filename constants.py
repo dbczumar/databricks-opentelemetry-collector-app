@@ -66,15 +66,29 @@ class Constants:
                 "These must be set for the service to function properly."
             )
 
-        # Unity Catalog configuration with defaults
-        cls.UC_CATALOG_NAME = os.environ.get("UC_CATALOG_NAME", "main")
-        cls.UC_SCHEMA_NAME = os.environ.get("UC_SCHEMA_NAME", "default")
-        cls.UC_TABLE_PREFIX_NAME = os.environ.get("UC_TABLE_PREFIX_NAME", "otel")
+        # Unity Catalog configuration (required)
+        cls.UC_CATALOG_NAME = os.environ.get("UC_CATALOG_NAME", "")
+        cls.UC_SCHEMA_NAME = os.environ.get("UC_SCHEMA_NAME", "")
+        cls.UC_TABLE_PREFIX_NAME = os.environ.get("UC_TABLE_PREFIX_NAME", "")
 
-        # MLflow configuration with default
-        cls.MLFLOW_EXPERIMENT_NAME = os.environ.get(
-            "MLFLOW_EXPERIMENT_NAME", "/Shared/otel-traces"
-        )
+        # MLflow configuration (required)
+        cls.MLFLOW_EXPERIMENT_NAME = os.environ.get("MLFLOW_EXPERIMENT_NAME", "")
+
+        # Validate Unity Catalog and MLflow configuration
+        if not cls.UC_CATALOG_NAME:
+            missing.append("UC_CATALOG_NAME")
+        if not cls.UC_SCHEMA_NAME:
+            missing.append("UC_SCHEMA_NAME")
+        if not cls.UC_TABLE_PREFIX_NAME:
+            missing.append("UC_TABLE_PREFIX_NAME")
+        if not cls.MLFLOW_EXPERIMENT_NAME:
+            missing.append("MLFLOW_EXPERIMENT_NAME")
+
+        if missing:
+            raise ValueError(
+                f"Missing required environment variables: {', '.join(missing)}. "
+                "These must be set for the service to function properly."
+            )
 
         # Log configuration
         _logger.info("Configuration initialized successfully:")

@@ -186,6 +186,11 @@ async def export_traces(
     return OTelExportTraceServiceResponse()
 
 
+@app.get("/")
+def health_check():
+    return {"status": "ok"}
+
+
 app.include_router(otel_router)
 
 if __name__ == "__main__":

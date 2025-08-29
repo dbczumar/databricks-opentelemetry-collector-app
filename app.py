@@ -27,11 +27,8 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 logger = logging.getLogger(__name__)
-
 # Reduce verbosity of zerobus_sdk logs
 logging.getLogger("zerobus_sdk").setLevel(logging.WARNING)
-
-logger.warning("MLFLOW VERSION: %s", mlflow.__version__)
 
 executor = None
 

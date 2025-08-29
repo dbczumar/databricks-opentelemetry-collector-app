@@ -1,18 +1,22 @@
-import pandas as pd
-from typing import Any
-from fastapi import FastAPI, APIRouter, Header, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
-from google.protobuf.message import DecodeError
-from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+import asyncio
 import logging
 import sys
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
+
+import mlflow
+import pandas as pd
+from fastapi import FastAPI, APIRouter, Header, HTTPException, Request, Response, status
+from google.protobuf.message import DecodeError
+from mlflow.genai.experimental.databricks_trace_exporter_utils import DatabricksTraceServerClient
+from mlflow.genai.experimental.databricks_trace_otel_pb2 import Span as DeltaProtoSpan
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+from pydantic import BaseModel, Field
+from zerobus_sdk import TableProperties
 
 from constants import Constants, OTLP_TRACES_PATH
-from exporter import export_otel_spans_to_delta
+from exporter import export_otel_spans_to_delta, ZerobusStreamFactory
 
-# Configure logging to actually show our messages
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -20,22 +24,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global thread pool executor with pre-seeded streams
+# Reduce verbosity of zerobus_sdk logs
+logging.getLogger("zerobus_sdk").setLevel(logging.WARNING)
+
 executor = None
 
 
 def init_thread_stream():
     """Initialize stream for a thread pool worker."""
-    from exporter import ZerobusStreamFactory
-    from zerobus_sdk import TableProperties
-    from mlflow.genai.experimental.databricks_trace_otel_pb2 import Span as DeltaProtoSpan
+    import threading
     table_properties = TableProperties(
         table_name=Constants.UC_FULL_TABLE_NAME,
         descriptor_proto=DeltaProtoSpan.DESCRIPTOR
     )
     factory = ZerobusStreamFactory.get_instance(table_properties)
     stream = factory.get_or_create_stream()
-    logger.info(f"Pre-seeded stream for thread in table {Constants.UC_FULL_TABLE_NAME}")
+    thread_id = threading.current_thread().ident
+    logger.info(f"Pre-seeded stream for thread {thread_id} in table {Constants.UC_FULL_TABLE_NAME}")
     return stream
 
 
@@ -43,30 +48,16 @@ async def lifespan(app: FastAPI):
     """
     Lifespan event handler for initialization tasks.
     """
-    # Initialize all configuration constants
     Constants.initialize()
     logger.info("Service configuration initialized successfully")
     
-    # Create MLflow experiment and trace destination at startup
-    import mlflow
-    from mlflow.genai.experimental.databricks_trace_exporter_utils import DatabricksTraceServerClient
-    
-    # Set tracking URI for Databricks
     mlflow.set_tracking_uri("databricks")
     logger.info("Set MLflow tracking URI to 'databricks'")
     
-    # Get or create experiment
     experiment_name = Constants.MLFLOW_EXPERIMENT_NAME
-    logger.info(f"Looking for experiment: {experiment_name}")
-    experiment = mlflow.get_experiment_by_name(experiment_name)
-    if experiment:
-        experiment_id = experiment.experiment_id
-        logger.info(f"Using existing experiment: {experiment_name} (ID: {experiment_id})")
-    else:
-        experiment_id = mlflow.create_experiment(experiment_name)
-        logger.info(f"Created new experiment: {experiment_name} (ID: {experiment_id})")
+    logger.info(f"Getting or creating experiment '{experiment_name}'")
+    experiment_id = mlflow.set_experiment(experiment_name).experiment_id
     
-    # Create trace destination (this creates the table if it doesn't exist)
     client = DatabricksTraceServerClient()
     
     logger.info(f"Creating/verifying trace destination for catalog={Constants.UC_CATALOG_NAME}, schema={Constants.UC_SCHEMA_NAME}, prefix={Constants.UC_TABLE_PREFIX_NAME}")
@@ -78,36 +69,28 @@ async def lifespan(app: FastAPI):
         table_prefix=Constants.UC_TABLE_PREFIX_NAME
     )
     
-    # Get the actual full table name from the response
     full_table_name = storage_config.spans_table_name
-    Constants.UC_FULL_TABLE_NAME = full_table_name  # Store for use in exporter
+    Constants.UC_FULL_TABLE_NAME = full_table_name
     logger.info(f"Trace destination configured for experiment {experiment_id}")
     logger.info(f"Full table name from config: {full_table_name}")
     
-    # Set up Zerobus connection at startup (REQUIRED)
     logger.info("Setting up Zerobus connection...")
-    from exporter import ZerobusStreamFactory
-    from zerobus_sdk import TableProperties
-    from mlflow.genai.experimental.databricks_trace_otel_pb2 import Span as DeltaProtoSpan
     
     table_properties = TableProperties(
         table_name=full_table_name,
         descriptor_proto=DeltaProtoSpan.DESCRIPTOR
     )
 
-    # Create thread pool executor and pre-seed streams AFTER everything is set up
     global executor
     executor = ThreadPoolExecutor(max_workers=8, initializer=init_thread_stream)
     logger.info("Created thread pool executor with 8 workers")
     
-    # Force initialization of all threads by submitting dummy tasks
     logger.info("Pre-seeding streams by warming up thread pool...")
     futures = []
     for i in range(8):
-        future = executor.submit(lambda: None)  # Submit dummy task to trigger initializer
+        future = executor.submit(lambda: None)
         futures.append(future)
     
-    # Wait for all threads to be initialized
     for future in futures:
         future.result()
     
@@ -115,12 +98,10 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Cleanup
     if executor:
         executor.shutdown(wait=True)
 
 
-# Create FastAPI app
 app = FastAPI(
     title="OTEL Service",
     description="OpenTelemetry trace collection service",
@@ -128,7 +109,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Create OTel router
 otel_router = APIRouter(prefix=OTLP_TRACES_PATH, tags=["OpenTelemetry"])
 
 
@@ -156,14 +136,12 @@ async def export_traces(
     Returns:
         OTel ExportTraceServiceResponse indicating success
     """
-    # Validate Content-Type header
     if content_type != "application/x-protobuf":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid Content-Type: {content_type}. Expected: application/x-protobuf",
         )
     
-    # Set response Content-Type header
     response.headers["Content-Type"] = "application/x-protobuf"
     
     body = await request.body()
@@ -177,7 +155,6 @@ async def export_traces(
             detail="Invalid OpenTelemetry protobuf format",
         )
     
-    # Log the received trace data
     num_spans = sum(
         len(scope_span.spans)
         for resource_span in parsed_request.resource_spans
@@ -185,7 +162,6 @@ async def export_traces(
     )
     logger.info(f"Received {num_spans} spans")
     
-    # Export spans to Delta table using Zerobus (run in pre-seeded thread pool)
     loop = asyncio.get_event_loop()
     success = await loop.run_in_executor(
         executor,
@@ -197,8 +173,11 @@ async def export_traces(
     )
     
     if not success:
-        logger.warning("Failed to export spans to Delta table")
-        # Return success anyway to avoid blocking the client
+        logger.error("Failed to export spans to Delta table")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to export spans to Delta table"
+        )
     
     return OTelExportTraceServiceResponse()
 
@@ -210,7 +189,6 @@ def hello_world():
     return f'<h1>Hello, World!</h1> {chart_data.to_html(index=False)}'
 
 
-# Include the OTel router
 app.include_router(otel_router)
 
 if __name__ == '__main__':

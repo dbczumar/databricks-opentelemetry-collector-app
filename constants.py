@@ -2,8 +2,8 @@
 Configuration constants for the OTEL service.
 """
 
-import os
 import logging
+import os
 
 _logger = logging.getLogger(__name__)
 

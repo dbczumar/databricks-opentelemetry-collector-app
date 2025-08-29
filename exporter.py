@@ -94,70 +94,86 @@ def convert_otel_proto_to_delta_spans(parsed_request: ExportTraceServiceRequest)
         
         for scope_span in resource_span.scope_spans:
             for otel_span in scope_span.spans:
-                delta_proto = DeltaProtoSpan()
-                
-                # Basic span info
-                delta_proto.trace_id = otel_span.trace_id.hex()
-                delta_proto.span_id = otel_span.span_id.hex()
-                delta_proto.parent_span_id = otel_span.parent_span_id.hex() if otel_span.parent_span_id else ""
-                delta_proto.trace_state = otel_span.trace_state or ""
-                delta_proto.flags = otel_span.flags or 0
-                delta_proto.name = otel_span.name
-                
-                # Map span kind using constants
-                delta_proto.kind = OTEL_SPAN_KIND_MAP.get(otel_span.kind, "INTERNAL")
-                
-                # Timestamps
-                delta_proto.start_time_unix_nano = otel_span.start_time_unix_nano
-                delta_proto.end_time_unix_nano = otel_span.end_time_unix_nano
-                
-                # Combine resource and span attributes
-                for key, value in resource_attributes.items():
-                    delta_proto.attributes[f"resource.{key}"] = json.dumps(value) if not isinstance(value, str) else value
-                
-                # Process span attributes
-                for attr in otel_span.attributes:
-                    value = _decode_anyvalue(attr.value)
-                    # Convert to string for Delta proto (attributes are stored as strings)
-                    if isinstance(value, str):
-                        delta_proto.attributes[attr.key] = value
-                    else:
-                        delta_proto.attributes[attr.key] = json.dumps(value)
-                
-                delta_proto.dropped_attributes_count = otel_span.dropped_attributes_count or 0
-                
-                # Convert events
-                for event in otel_span.events:
-                    event_dict = {
-                        "time_unix_nano": event.time_unix_nano,
-                        "name": event.name,
-                        "attributes": {},
-                        "dropped_attributes_count": event.dropped_attributes_count or 0,
-                    }
-                    for attr in event.attributes:
-                        value = _decode_anyvalue(attr.value)
-                        # Convert to string for event attributes
-                        if isinstance(value, str):
-                            event_dict["attributes"][attr.key] = value
-                        else:
-                            event_dict["attributes"][attr.key] = json.dumps(value)
-                    
-                    delta_proto.events.append(DeltaProtoSpan.Event(**event_dict))
-                
-                delta_proto.dropped_events_count = otel_span.dropped_events_count or 0
-                delta_proto.dropped_links_count = otel_span.dropped_links_count or 0
-                
-                # Convert status
-                status_code = otel_span.status.code if otel_span.status else 0
-                status_dict = {
-                    "message": otel_span.status.message if otel_span.status else "",
-                    "code": OTEL_STATUS_CODE_MAP.get(status_code, "UNSET"),
-                }
-                delta_proto.status.CopyFrom(DeltaProtoSpan.Status(**status_dict))
-                
+                delta_proto = _create_delta_proto_span(otel_span, resource_attributes, DeltaProtoSpan)
                 delta_proto_spans.append(delta_proto)
     
     return delta_proto_spans
+
+
+def _create_delta_proto_span(otel_span, resource_attributes, DeltaProtoSpan):
+    """
+    Create a single Delta proto span from an OTel span.
+    
+    Args:
+        otel_span: OpenTelemetry span to convert
+        resource_attributes: Resource attributes to include
+        DeltaProtoSpan: Delta proto span class
+        
+    Returns:
+        Constructed Delta proto span
+    """
+    delta_proto = DeltaProtoSpan()
+    
+    # Basic span info
+    delta_proto.trace_id = otel_span.trace_id.hex()
+    delta_proto.span_id = otel_span.span_id.hex()
+    delta_proto.parent_span_id = otel_span.parent_span_id.hex() if otel_span.parent_span_id else ""
+    delta_proto.trace_state = otel_span.trace_state or ""
+    delta_proto.flags = otel_span.flags or 0
+    delta_proto.name = otel_span.name
+    
+    # Map span kind using constants
+    delta_proto.kind = OTEL_SPAN_KIND_MAP.get(otel_span.kind, "INTERNAL")
+    
+    # Timestamps
+    delta_proto.start_time_unix_nano = otel_span.start_time_unix_nano
+    delta_proto.end_time_unix_nano = otel_span.end_time_unix_nano
+    
+    # Combine resource and span attributes
+    for key, value in resource_attributes.items():
+        delta_proto.attributes[f"resource.{key}"] = json.dumps(value) if not isinstance(value, str) else value
+    
+    # Process span attributes
+    for attr in otel_span.attributes:
+        value = _decode_anyvalue(attr.value)
+        # Convert to string for Delta proto (attributes are stored as strings)
+        if isinstance(value, str):
+            delta_proto.attributes[attr.key] = value
+        else:
+            delta_proto.attributes[attr.key] = json.dumps(value)
+    
+    delta_proto.dropped_attributes_count = otel_span.dropped_attributes_count or 0
+    
+    # Convert events
+    for event in otel_span.events:
+        event_dict = {
+            "time_unix_nano": event.time_unix_nano,
+            "name": event.name,
+            "attributes": {},
+            "dropped_attributes_count": event.dropped_attributes_count or 0,
+        }
+        for attr in event.attributes:
+            value = _decode_anyvalue(attr.value)
+            # Convert to string for event attributes
+            if isinstance(value, str):
+                event_dict["attributes"][attr.key] = value
+            else:
+                event_dict["attributes"][attr.key] = json.dumps(value)
+        
+        delta_proto.events.append(DeltaProtoSpan.Event(**event_dict))
+    
+    delta_proto.dropped_events_count = otel_span.dropped_events_count or 0
+    delta_proto.dropped_links_count = otel_span.dropped_links_count or 0
+    
+    # Convert status
+    status_code = otel_span.status.code if otel_span.status else 0
+    status_dict = {
+        "message": otel_span.status.message if otel_span.status else "",
+        "code": OTEL_STATUS_CODE_MAP.get(status_code, "UNSET"),
+    }
+    delta_proto.status.CopyFrom(DeltaProtoSpan.Status(**status_dict))
+    
+    return delta_proto
 
 
 class ZerobusStreamFactory:

@@ -5,14 +5,18 @@ from pydantic import BaseModel, Field
 from google.protobuf.message import DecodeError
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 import logging
+import sys
 
-from constants import Constants
+from constants import Constants, OTLP_TRACES_PATH
 from exporter import export_otel_spans_to_delta
 
-logging.getLogger("uvicorn.error").setLevel(logging.ERROR)
-
-# OpenTelemetry constants
-OTLP_TRACES_PATH = "/v1/traces"
+# Configure logging to actually show our messages
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
@@ -29,24 +33,60 @@ async def startup_event():
     """
     # Initialize all configuration constants
     Constants.initialize()
-    logging.info("Service configuration initialized successfully")
+    logger.info("Service configuration initialized successfully")
     
-    # Test Zerobus connection at startup
-    from exporter import ZerobusStreamFactory
-    from zerobus_sdk import TableProperties
+    # Create MLflow experiment and trace destination at startup
+    import mlflow
+    from mlflow.genai.experimental.databricks_trace_exporter_utils import DatabricksTraceServerClient
     
-    table_name = f"{Constants.UC_CATALOG_NAME}.{Constants.UC_SCHEMA_NAME}.{Constants.UC_TABLE_PREFIX_NAME}_spans"
-    table_properties = TableProperties(
-        table_name=table_name,
+    # Set tracking URI for Databricks
+    mlflow.set_tracking_uri("databricks")
+    logger.info("Set MLflow tracking URI to 'databricks'")
+    
+    # Get or create experiment
+    experiment_name = Constants.MLFLOW_EXPERIMENT_NAME
+    logger.info(f"Looking for experiment: {experiment_name}")
+    experiment = mlflow.get_experiment_by_name(experiment_name)
+    if experiment:
+        experiment_id = experiment.experiment_id
+        logger.info(f"Using existing experiment: {experiment_name} (ID: {experiment_id})")
+    else:
+        experiment_id = mlflow.create_experiment(experiment_name)
+        logger.info(f"Created new experiment: {experiment_name} (ID: {experiment_id})")
+    
+    # Create trace destination (this creates the table if it doesn't exist)
+    client = DatabricksTraceServerClient()
+    
+    logger.info(f"Creating/verifying trace destination for catalog={Constants.UC_CATALOG_NAME}, schema={Constants.UC_SCHEMA_NAME}, prefix={Constants.UC_TABLE_PREFIX_NAME}")
+    logger.info(f"This may take a while as it creates the table if it doesn't exist...")
+    storage_config = client.create_trace_destination(
+        experiment_id=experiment_id,
         catalog=Constants.UC_CATALOG_NAME,
         schema=Constants.UC_SCHEMA_NAME,
-        table=f"{Constants.UC_TABLE_PREFIX_NAME}_spans"
+        table_prefix=Constants.UC_TABLE_PREFIX_NAME
+    )
+    
+    # Get the actual full table name from the response
+    full_table_name = storage_config.spans_table_name
+    Constants.UC_FULL_TABLE_NAME = full_table_name  # Store for use in exporter
+    logger.info(f"Trace destination configured for experiment {experiment_id}")
+    logger.info(f"Full table name from config: {full_table_name}")
+    
+    # Set up Zerobus connection at startup (REQUIRED)
+    logger.info("Setting up Zerobus connection...")
+    from exporter import ZerobusStreamFactory
+    from zerobus_sdk import TableProperties
+    from mlflow.genai.experimental.databricks_trace_otel_pb2 import Span as DeltaProtoSpan
+    
+    table_properties = TableProperties(
+        table_name=full_table_name,
+        descriptor_proto=DeltaProtoSpan.DESCRIPTOR
     )
     
     # Get or create stream to validate configuration
     factory = ZerobusStreamFactory.get_instance(table_properties)
     stream = factory.get_or_create_stream()
-    logging.info(f"Successfully connected to Zerobus for table {table_name}")
+    logger.info(f"Successfully connected to Zerobus for table {full_table_name}")
 
 # Create OTel router
 otel_router = APIRouter(prefix=OTLP_TRACES_PATH, tags=["OpenTelemetry"])
@@ -103,7 +143,7 @@ async def export_traces(
         for resource_span in parsed_request.resource_spans
         for scope_span in resource_span.scope_spans
     )
-    logging.info(f"Received {num_spans} spans")
+    logger.info(f"Received {num_spans} spans")
     
     # Export spans to Delta table using Zerobus
     success = export_otel_spans_to_delta(
@@ -114,7 +154,7 @@ async def export_traces(
     )
     
     if not success:
-        logging.warning("Failed to export spans to Delta table")
+        logger.warning("Failed to export spans to Delta table")
         # Return success anyway to avoid blocking the client
     
     return OTelExportTraceServiceResponse()

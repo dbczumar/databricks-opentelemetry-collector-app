@@ -7,6 +7,26 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+# OpenTelemetry constants
+OTLP_TRACES_PATH = "/v1/traces"
+
+# OpenTelemetry span kind mapping
+OTEL_SPAN_KIND_MAP = {
+    0: "UNSPECIFIED",
+    1: "INTERNAL", 
+    2: "SERVER",
+    3: "CLIENT",
+    4: "PRODUCER",
+    5: "CONSUMER"
+}
+
+# OpenTelemetry status code mapping
+OTEL_STATUS_CODE_MAP = {
+    0: "UNSET",
+    1: "OK",
+    2: "ERROR"
+}
+
 
 class Constants:
     """
@@ -16,13 +36,13 @@ class Constants:
     
     # Databricks configuration
     DATABRICKS_TOKEN: str
-    DATABRICKS_WORKSPACE_URL: str
-    DATABRICKS_INGEST_URL: str
+    DATABRICKS_HOST: str
     
     # Unity Catalog configuration
     UC_CATALOG_NAME: str
     UC_SCHEMA_NAME: str
     UC_TABLE_PREFIX_NAME: str
+    UC_FULL_TABLE_NAME: str  # Set after create_trace_destination
     
     # MLflow configuration
     MLFLOW_EXPERIMENT_NAME: str
@@ -35,17 +55,14 @@ class Constants:
         """
         # Required Databricks configuration
         cls.DATABRICKS_TOKEN = os.environ.get("DATABRICKS_TOKEN", "")
-        cls.DATABRICKS_WORKSPACE_URL = os.environ.get("DATABRICKS_WORKSPACE_URL", "")
-        cls.DATABRICKS_INGEST_URL = os.environ.get("DATABRICKS_INGEST_URL", "")
+        cls.DATABRICKS_HOST = os.environ.get("DATABRICKS_HOST", "")
         
         # Validate required Databricks configuration
         missing = []
         if not cls.DATABRICKS_TOKEN:
             missing.append("DATABRICKS_TOKEN")
-        if not cls.DATABRICKS_WORKSPACE_URL:
-            missing.append("DATABRICKS_WORKSPACE_URL")
-        if not cls.DATABRICKS_INGEST_URL:
-            missing.append("DATABRICKS_INGEST_URL")
+        if not cls.DATABRICKS_HOST:
+            missing.append("DATABRICKS_HOST")
         
         if missing:
             raise ValueError(
@@ -63,7 +80,6 @@ class Constants:
         
         # Log configuration
         _logger.info("Configuration initialized successfully:")
-        _logger.info(f"  Workspace URL: {cls.DATABRICKS_WORKSPACE_URL}")
-        _logger.info(f"  Ingest URL: {cls.DATABRICKS_INGEST_URL}")
-        _logger.info(f"  UC Table: {cls.UC_CATALOG_NAME}.{cls.UC_SCHEMA_NAME}.{cls.UC_TABLE_PREFIX_NAME}_spans")
+        _logger.info(f"  Host: {cls.DATABRICKS_HOST}")
+        _logger.info(f"  UC Table Prefix: {cls.UC_CATALOG_NAME}.{cls.UC_SCHEMA_NAME}.{cls.UC_TABLE_PREFIX_NAME}")
         _logger.info(f"  MLflow Experiment: {cls.MLFLOW_EXPERIMENT_NAME}")

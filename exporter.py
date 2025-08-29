@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Optional
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 from zerobus_sdk import TableProperties, ZerobusSdk, StreamState
 
+from constants import Constants, OTEL_SPAN_KIND_MAP, OTEL_STATUS_CODE_MAP
+
 _logger = logging.getLogger(__name__)
 
 
@@ -36,19 +38,13 @@ def create_archival_zerobus_sdk():
     Returns:
         ZerobusSdk: Configured SDK instance ready for trace archival operations
     """
-    from zerobus_sdk import ZerobusSdk
-    from constants import Constants
+    # Use MLflow's complete SDK creation function which handles all auth properly
+    from mlflow.genai.experimental.databricks_trace_exporter_utils import (
+        create_archival_zerobus_sdk as mlflow_create_sdk
+    )
     
-    # Use configuration from Constants (already validated at startup)
-    _logger.debug(
-        f"Creating ZerobusSdk with ingest URL: {Constants.DATABRICKS_INGEST_URL}, "
-        f"workspace URL: {Constants.DATABRICKS_WORKSPACE_URL}"
-    )
-    return ZerobusSdk(
-        Constants.DATABRICKS_INGEST_URL,
-        Constants.DATABRICKS_WORKSPACE_URL,
-        Constants.DATABRICKS_TOKEN
-    )
+    # This will use environment variables and proper auth resolution
+    return mlflow_create_sdk()
 
 
 def _decode_anyvalue(any_value):
@@ -108,16 +104,8 @@ def convert_otel_proto_to_delta_spans(parsed_request: ExportTraceServiceRequest)
                 delta_proto.flags = otel_span.flags or 0
                 delta_proto.name = otel_span.name
                 
-                # Span kind mapping
-                kind_map = {
-                    0: "UNSPECIFIED",
-                    1: "INTERNAL",
-                    2: "SERVER",
-                    3: "CLIENT",
-                    4: "PRODUCER",
-                    5: "CONSUMER"
-                }
-                delta_proto.kind = kind_map.get(otel_span.kind, "INTERNAL")
+                # Map span kind using constants
+                delta_proto.kind = OTEL_SPAN_KIND_MAP.get(otel_span.kind, "INTERNAL")
                 
                 # Timestamps
                 delta_proto.start_time_unix_nano = otel_span.start_time_unix_nano
@@ -160,9 +148,10 @@ def convert_otel_proto_to_delta_spans(parsed_request: ExportTraceServiceRequest)
                 delta_proto.dropped_links_count = otel_span.dropped_links_count or 0
                 
                 # Convert status
+                status_code = otel_span.status.code if otel_span.status else 0
                 status_dict = {
                     "message": otel_span.status.message if otel_span.status else "",
-                    "code": "OK" if otel_span.status and otel_span.status.code == 1 else "ERROR" if otel_span.status and otel_span.status.code == 2 else "UNSET",
+                    "code": OTEL_STATUS_CODE_MAP.get(status_code, "UNSET"),
                 }
                 delta_proto.status.CopyFrom(DeltaProtoSpan.Status(**status_dict))
                 
@@ -293,12 +282,13 @@ def export_otel_spans_to_delta(
         
         # Create table properties
         TableProperties, _ = import_zerobus_sdk_classes()
-        table_name = f"{catalog}.{schema}.{table_prefix}_spans"
+        from mlflow.genai.experimental.databricks_trace_otel_pb2 import Span as DeltaProtoSpan
+        
+        # Use the full table name from Constants (set at startup by create_trace_destination)
+        table_name = Constants.UC_FULL_TABLE_NAME
         table_properties = TableProperties(
             table_name=table_name,
-            catalog=catalog,
-            schema=schema,
-            table=f"{table_prefix}_spans"
+            descriptor_proto=DeltaProtoSpan.DESCRIPTOR
         )
         
         # Get stream factory singleton

@@ -13,12 +13,12 @@ env:
   - name: DATABRICKS_TOKEN
     valueFrom: databricks-token
   - name: DATABRICKS_HOST
-    value: "https://adb-7064161269814046.2.staging.azuredatabricks.net/"
+    value: "https://your-workspace.databricks.com"
   - name: MLFLOW_EXPERIMENT_NAME
-    value: "/Shared/otel-traces0"
+    value: "/Shared/otel-traces"
   - name: UC_CATALOG_NAME
-    value: "corey2"
+    value: "main"
   - name: UC_SCHEMA_NAME
-    value: "m2"
+    value: "default"
   - name: UC_TABLE_PREFIX_NAME
-    value: "100otels"
+    value: "otel"

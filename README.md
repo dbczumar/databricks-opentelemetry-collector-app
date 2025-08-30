@@ -102,6 +102,7 @@ Deploy the OpenTelemetry Delta Collector to Databricks Apps using the Databricks
 2. Add the secret to your app via the Databricks UI:
    - Navigate to your app in the UI ([View app details](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/view-app-details))
    - Add the `databricks-token` secret from the "Setting up the Databricks Token Secret" section to your app ([Configure resources](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources?language=Databricks+UI#configure-resources-for-your-app))
+   - When prompted, use `databricks-token` as the resource key
 
 3. Sync your app files to the Databricks workspace:
    ```bash

@@ -4,19 +4,21 @@ command: [
   "--host",
   "0.0.0.0",
   "--port",
-  "8000"
+  "8000",
+  "--workers",
+  "8"
 ]
 
 env:
   - name: DATABRICKS_TOKEN
     valueFrom: databricks-token
   - name: DATABRICKS_HOST
-    value: "https://your-workspace.databricks.com"
+    value: "https://adb-7064161269814046.2.staging.azuredatabricks.net/"
   - name: MLFLOW_EXPERIMENT_NAME
-    value: "/Shared/otel-traces"
+    value: "/Shared/otel-traces-15"
   - name: UC_CATALOG_NAME
-    value: "main"
+    value: "corey2"
   - name: UC_SCHEMA_NAME
-    value: "default"
+    value: "m6"
   - name: UC_TABLE_PREFIX_NAME
-    value: "otel"
+    value: "otel-15"

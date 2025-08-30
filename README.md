@@ -17,6 +17,11 @@
    brew upgrade databricks
    ```
 
+3. Change your shell working directory to the repository root directory:
+   ```bash
+   cd /path/to/databricks-opentelemetry-collector-app
+   ```
+
 ## Setup
 
 ### Databricks Authentication
@@ -79,7 +84,9 @@ The OpenTelemetry service stores trace data in Unity Catalog tables. Before depl
 
 The service will automatically create the necessary tables within your specified catalog and schema on first startup.
 
-See [Unity Catalog documentation](https://docs.databricks.com/en/data-governance/unity-catalog/index.html) for creating and managing catalogs and schemas.
+See documentation for:
+- [Creating a catalog](https://docs.databricks.com/aws/en/catalogs/create-catalog#create-a-catalog)
+- [Creating a schema](https://docs.databricks.com/aws/en/schemas/create-schema#create-a-schema)
 
 ## Deploying the App
 
@@ -87,28 +94,33 @@ Deploy the OpenTelemetry Delta Collector to Databricks Apps using the Databricks
 
 1. Create the app (first time only):
    ```bash
-   # Use --no-compute to prevent starting the app before source code is synced
-   databricks apps create otel-collector --no-compute
+   databricks apps create otel-collector
    ```
 
-   **Note:** You can replace `otel-collector` with your preferred app name.
+   **Note:** You can replace `opentelemetry-collector-app` with your preferred app name.
 
-2. Sync your app files to the Databricks workspace:
+2. Add the secret to your app via the Databricks UI:
+   - Navigate to your app in the UI ([View app details](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/view-app-details))
+   - Add the `databricks-token` secret from the "Setting up the Databricks Token Secret" section to your app ([Configure resources](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources?language=Databricks+UI#configure-resources-for-your-app))
+
+3. Sync your app files to the Databricks workspace:
    ```bash
-   databricks sync . /Workspace/Users/your-email@company.com/otel-app
+   databricks sync . /Workspace/Users/your-email@company.com/opentelemetry-collector-code
    ```
 
-3. Deploy the app:
+   **Note:** Replace `your-email@company.com` with your Databricks user email.
+
+4. Deploy the app:
    ```bash
-   databricks apps deploy otel-collector \
-     --source-code-path /Workspace/Users/your-email@company.com/otel-app
+   databricks apps deploy opentelemetry-collector-app \
+     --source-code-path /Workspace/Users/your-email@company.com/opentelemetry-collector-code
    ```
 
-   Update the source code path to match your workspace location.
+   **Note:** The source code path should match the workspace destination from step 3 where you synced the app code.
 
-4. Monitor the deployment:
+5. Monitor the deployment:
    ```bash
-   databricks apps get otel-collector
+   databricks apps get opentelemetry-collector-app
    ```
 
    This will show the app status and URL once deployed.

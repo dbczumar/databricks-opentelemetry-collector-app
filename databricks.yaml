@@ -1,5 +1,0 @@
-resources:
-  secrets:
-    databricks-token:
-      scope: opentelemetry-collector-app
-      key: databricks-token

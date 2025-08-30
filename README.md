@@ -45,7 +45,7 @@ env:
   - name: DATABRICKS_HOST
     value: "https://your-workspace.databricks.com"  # Update with your workspace URL
   - name: MLFLOW_EXPERIMENT_NAME
-    value: "/Shared/otel-traces"  # Update if using different experiment
+    value: "/Shared/opentelemtry-traces"  # Will be created if it doesn't exist; can be updated
   - name: UC_CATALOG_NAME
     value: "main"  # Update with your catalog name
   - name: UC_SCHEMA_NAME
@@ -94,7 +94,7 @@ Deploy the OpenTelemetry Delta Collector to Databricks Apps using the Databricks
 
 1. Create the app (first time only):
    ```bash
-   databricks apps create otel-collector
+   databricks apps create opentelemetry-collector-app
    ```
 
    **Note:** You can replace `opentelemetry-collector-app` with your preferred app name.

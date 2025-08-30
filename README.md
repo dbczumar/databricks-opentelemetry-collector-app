@@ -60,7 +60,7 @@ The `DATABRICKS_TOKEN` in `app.yaml` references a secret named `databricks-token
 
 1. Create a Personal Access Token (PAT). See [Databricks PAT Documentation](https://docs.databricks.com/en/dev-tools/auth/pat.html).
    
-   **Note:** The PAT token is required in order to provide the App with access to a UC Schema with direct delta ingest.
+   **Note:** The PAT token is required in order to provide the App with access to a UC Schema with direct delta ingest. The user creating the PAT must have access to the Unity Catalog catalog and schema specified in `app.yaml`.
 
 2. Create a secret scope:
    ```bash
@@ -136,6 +136,8 @@ Once your app is deployed, you can send OpenTelemetry spans to it.
 databricks auth login --host https://your-workspace.databricks.com
 ```
 See [OAuth authentication documentation](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-u2m?language=Python#automatic-authorization-with-unified-client-authentication) for more details.
+
+For clients in other languages (e.g., TypeScript), see [Retrieving OAuth credentials](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-u2m?language=Environment#automatic-authorization-with-unified-client-authentication) for information on accessing OAuth tokens from environment variables.
 
 ### Option 1: Run the example script
 

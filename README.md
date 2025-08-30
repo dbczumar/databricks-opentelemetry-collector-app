@@ -205,4 +205,4 @@ mlflow.exceptions.RestException: ALREADY_EXISTS: Error [...]: Trace destination 
 
 **Solution:** 
 1. Use a different MLflow experiment name in `app.yaml`, OR
-2. Use the existing table prefix that was previously configured for this experiment (shown in the error message)
+2. Use the existing table prefix and location that was previously configured for this experiment (shown in the error message)

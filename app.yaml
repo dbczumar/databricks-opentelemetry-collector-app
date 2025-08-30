@@ -6,7 +6,7 @@ command: [
   "--port",
   "8000",
   "--workers",
-  "8",
+  "16",
 ]
 
 env:

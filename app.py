@@ -90,12 +90,12 @@ async def lifespan(app: FastAPI):
     logger.info("Setting up Zerobus connection...")
 
     global executor
-    executor = ThreadPoolExecutor(max_workers=8, initializer=init_thread_stream)
-    logger.info("Created thread pool executor with 8 workers")
+    executor = ThreadPoolExecutor(max_workers=16, initializer=init_thread_stream)
+    logger.info("Created thread pool executor with 16 workers")
 
     logger.info("Pre-seeding streams by warming up thread pool...")
     futures = []
-    for i in range(8):
+    for i in range(16):
         future = executor.submit(lambda: None)
         futures.append(future)
 
@@ -201,4 +201,4 @@ app.include_router(otel_router)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, workers=8, log_level="info")
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, workers=16, log_level="info")

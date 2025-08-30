@@ -191,3 +191,18 @@ with tracer.start_as_current_span("test_operation") as span:
 provider.force_flush()
 print("✓ Spans sent")
 ```
+
+## Common Issues
+
+### Trace destination already exists error
+
+**Error:**
+```
+mlflow.exceptions.RestException: ALREADY_EXISTS: Error [...]: Trace destination already exists for traceLocation MlflowExperiment(...) and cannot be modified.
+```
+
+**Cause:** The MLflow experiment already has a trace destination configured with a different table prefix or location.
+
+**Solution:** 
+1. Use a different MLflow experiment name in `app.yaml`, OR
+2. Use the existing table prefix that was previously configured for this experiment (shown in the error message)

@@ -54,6 +54,28 @@ env:
     value: "otel"  # Update with your desired table name prefix
 ```
 
+#### Configuring Worker Count for Throughput
+
+The app uses 16 workers by default. For higher throughput with large spans, you may need to adjust the worker count in `app.yaml`:
+
+```yaml
+command: [
+  "uvicorn",
+  "app:app",
+  "--host",
+  "0.0.0.0",
+  "--port",
+  "8000",
+  "--workers",
+  "16",  # Adjust based on your workload
+]
+```
+
+**Performance benchmarks:**
+- **16 workers**: ~70 spans/second for 100KB spans (7 MB/s throughput)
+
+Each worker maintains its own thread pool (16 threads) for non-blocking I/O, so the actual concurrency is `workers × 16`.
+
 ### Setting up the Databricks Token Secret
 
 The `DATABRICKS_TOKEN` in `app.yaml` references a secret named `databricks-token`. You need to create and populate this secret with a Databricks Personal Access Token (PAT).

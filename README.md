@@ -173,6 +173,12 @@ For clients in other languages (e.g., TypeScript), see [Retrieving OAuth credent
 
 ### Option 1: Run the example script
 
+Install the `opentelemetry-sdk`, `databricks-sdk`, `opentelemetry-exporter-otlp` Python packages via `pip`, `conda`, `uv`, etc.
+
+```bash
+pip install opentelemetry-exporter-otlp opentelemetry-sdk databricks-sdk
+```
+
 Set the environment variable and run the provided example script:
 ```bash
 export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://your-app-name.databricksapps.com/v1/traces

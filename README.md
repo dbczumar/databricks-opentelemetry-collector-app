@@ -22,6 +22,8 @@
    cd /path/to/databricks-opentelemetry-collector-app
    ```
 
+If your workspace uses [IP Access Lists](https://docs.databricks.com/aws/en/security/network/front-end/ip-access-list), this application will not work.
+
 ## Setup
 
 ### 1. Databricks Authentication

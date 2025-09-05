@@ -22,6 +22,11 @@
    cd /path/to/databricks-opentelemetry-collector-app
    ```
 
+## Limitations
+
+1. This feature uses Private Preview capabilities.  Please contact your Databricks account representative to enable these previews.
+2. If your workspace uses [IP Access Lists](https://docs.databricks.com/aws/en/security/network/front-end/ip-access-list), this application will not work.
+
 ## Setup
 
 ### 1. Databricks Authentication

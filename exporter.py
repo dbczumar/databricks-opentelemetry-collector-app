@@ -16,6 +16,7 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
 from zerobus_sdk import TableProperties, StreamState
 
 from constants import (
+    Constants,
     OTEL_SPAN_KIND_MAP,
     OTEL_STATUS_CODE_MAP,
     get_table_properties,
@@ -357,7 +358,7 @@ def export_otel_spans_to_delta(
         stream = factory.get_or_create_stream()
 
         # Ingest all spans
-        _logger.info(f"Ingesting {len(delta_proto_spans)} spans to table {table_name}")
+        _logger.info(f"Ingesting {len(delta_proto_spans)} spans to table {Constants.UC_FULL_TABLE_NAME}")
         for proto_span in delta_proto_spans:
             stream.ingest_record(proto_span)
 

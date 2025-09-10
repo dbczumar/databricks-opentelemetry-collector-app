@@ -9,13 +9,14 @@ import atexit
 import json
 import logging
 import threading
+import time
 
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
     ExportTraceServiceRequest,
 )
 from zerobus_sdk import TableProperties, StreamState
 
-from constants import Constants, OTEL_SPAN_KIND_MAP, OTEL_STATUS_CODE_MAP
+from constants import Constants, OTEL_SPAN_KIND_MAP, OTEL_STATUS_CODE_MAP, get_table_properties
 
 _logger = logging.getLogger(__name__)
 
@@ -234,6 +235,7 @@ class ZerobusStreamFactory:
                     )
             cls._instances.clear()
 
+
     def __init__(self, table_properties: TableProperties):
         """
         Initialize factory with table properties.
@@ -280,6 +282,31 @@ class ZerobusStreamFactory:
             _logger.error(f"Failed to create Zerobus stream: {e}")
             raise
 
+    def refresh_current_thread_stream(self):
+        """
+        Refresh the stream for the current thread.
+        
+        No locking needed because:
+        - Each thread has its own isolated copy of thread-local storage
+        - Only this thread can modify self._thread_local.stream_cache
+        - No shared state between threads for the stream cache
+        """
+        stream_cache = getattr(self._thread_local, "stream_cache", None)
+        if stream_cache and "stream" in stream_cache:
+            # Close old stream
+            try:
+                stream_cache["stream"].flush()
+                stream_cache["stream"].close()
+            except Exception as e:
+                _logger.warning(f"Error closing old stream: {e}")
+        
+        # Clear cache and create new stream
+        self._thread_local.stream_cache = None
+        self.get_or_create_stream()
+        thread_id = threading.current_thread().ident
+        _logger.info(f"Refreshed stream for thread {thread_id} in table {self.table_properties.table_name}")
+
+
     def close_all_streams(self):
         """
         Close all streams managed by this factory.
@@ -320,20 +347,8 @@ def export_otel_spans_to_delta(
             _logger.debug("No proto spans to export")
             return True
 
-        # Create table properties
-        TableProperties, _ = import_zerobus_sdk_classes()
-        from mlflow.genai.experimental.databricks_trace_otel_pb2 import (
-            Span as DeltaProtoSpan,
-        )
-
-        # Use the full table name from Constants (set at startup by create_trace_destination)
-        table_name = Constants.UC_FULL_TABLE_NAME
-        table_properties = TableProperties(
-            table_name=table_name, descriptor_proto=DeltaProtoSpan.DESCRIPTOR
-        )
-
         # Get stream factory singleton
-        factory = ZerobusStreamFactory.get_instance(table_properties)
+        factory = ZerobusStreamFactory.get_instance(get_table_properties())
 
         # Get or create stream
         stream = factory.get_or_create_stream()

@@ -19,8 +19,11 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
 from pydantic import BaseModel, Field
 from zerobus_sdk import TableProperties
 
-from constants import Constants, OTLP_TRACES_PATH
+from constants import Constants, OTLP_TRACES_PATH, get_table_properties
 from exporter import export_otel_spans_to_delta, ZerobusStreamFactory
+
+NUM_WORKER_THREADS = 16
+STREAM_REFRESH_INTERVAL_SECONDS = 600  # 10 minutes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,10 +45,7 @@ def init_thread_stream():
     """Initialize stream for a thread pool worker."""
     import threading
 
-    table_properties = TableProperties(
-        table_name=Constants.UC_FULL_TABLE_NAME,
-        descriptor_proto=DeltaProtoSpan.DESCRIPTOR,
-    )
+    table_properties = get_table_properties()
     factory = ZerobusStreamFactory.get_instance(table_properties)
     stream = factory.get_or_create_stream()
     thread_id = threading.current_thread().ident
@@ -53,6 +53,42 @@ def init_thread_stream():
         f"Pre-seeded stream for thread {thread_id} in table {Constants.UC_FULL_TABLE_NAME}"
     )
     return stream
+
+
+def refresh_streams_in_thread():
+    """Refresh streams for all factories in the current thread."""
+    factory = ZerobusStreamFactory.get_instance(get_table_properties())
+    factory.refresh_current_thread_stream()
+
+
+async def periodic_stream_refresh():
+    """
+    Background task that refreshes Zerobus streams every 10 minutes.
+    """
+    while True:
+        try:
+            await asyncio.sleep(STREAM_REFRESH_INTERVAL_SECONDS)
+            logger.info("Starting periodic stream refresh")
+            
+            # Submit refresh tasks to all worker threads
+            futures = []
+            for _ in range(NUM_WORKER_THREADS):
+                future = executor.submit(refresh_streams_in_thread)
+                futures.append(future)
+            
+            # Wait for all refreshes to complete
+            for future in futures:
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.warning(f"Error during stream refresh: {e}")
+                    
+            logger.info("Completed periodic stream refresh")
+        except asyncio.CancelledError:
+            logger.info("Periodic stream refresh task cancelled")
+            break
+        except Exception as e:
+            logger.error(f"Error in periodic stream refresh: {e}")
 
 
 async def lifespan(app: FastAPI):
@@ -90,12 +126,12 @@ async def lifespan(app: FastAPI):
     logger.info("Setting up Zerobus connection...")
 
     global executor
-    executor = ThreadPoolExecutor(max_workers=16, initializer=init_thread_stream)
-    logger.info("Created thread pool executor with 16 workers")
+    executor = ThreadPoolExecutor(max_workers=NUM_WORKER_THREADS, initializer=init_thread_stream)
+    logger.info(f"Created thread pool executor with {NUM_WORKER_THREADS} workers")
 
     logger.info("Pre-seeding streams by warming up thread pool...")
     futures = []
-    for i in range(16):
+    for i in range(NUM_WORKER_THREADS):
         future = executor.submit(lambda: None)
         futures.append(future)
 
@@ -104,7 +140,19 @@ async def lifespan(app: FastAPI):
 
     logger.info("Thread pool warmed up - all streams pre-seeded")
 
+    # Start the periodic refresh task
+    refresh_task = asyncio.create_task(periodic_stream_refresh())
+    logger.info(f"Started periodic stream refresh task ({STREAM_REFRESH_INTERVAL_SECONDS} second intervals)")
+
     yield
+
+    # Cancel the refresh task
+    refresh_task.cancel()
+    try:
+        await refresh_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("Stopped periodic stream refresh task")
 
     if executor:
         executor.shutdown(wait=True)

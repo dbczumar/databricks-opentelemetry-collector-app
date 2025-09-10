@@ -5,6 +5,8 @@ Configuration constants for the OTEL service.
 import logging
 import os
 
+from zerobus_sdk import TableProperties
+
 _logger = logging.getLogger(__name__)
 
 # OpenTelemetry constants
@@ -97,3 +99,13 @@ class Constants:
             f"  UC Table Prefix: {cls.UC_CATALOG_NAME}.{cls.UC_SCHEMA_NAME}.{cls.UC_TABLE_PREFIX_NAME}"
         )
         _logger.info(f"  MLflow Experiment: {cls.MLFLOW_EXPERIMENT_NAME}")
+
+
+def get_table_properties() -> TableProperties:
+    """Get configured TableProperties for the UC table."""
+    from mlflow.genai.experimental.databricks_trace_otel_pb2 import Span as DeltaProtoSpan
+    
+    return TableProperties(
+        table_name=Constants.UC_FULL_TABLE_NAME,
+        descriptor_proto=DeltaProtoSpan.DESCRIPTOR,
+    )

@@ -9,14 +9,17 @@ import atexit
 import json
 import logging
 import threading
-import time
 
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
     ExportTraceServiceRequest,
 )
 from zerobus_sdk import TableProperties, StreamState
 
-from constants import Constants, OTEL_SPAN_KIND_MAP, OTEL_STATUS_CODE_MAP, get_table_properties
+from constants import (
+    OTEL_SPAN_KIND_MAP,
+    OTEL_STATUS_CODE_MAP,
+    get_table_properties,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -235,7 +238,6 @@ class ZerobusStreamFactory:
                     )
             cls._instances.clear()
 
-
     def __init__(self, table_properties: TableProperties):
         """
         Initialize factory with table properties.
@@ -285,7 +287,7 @@ class ZerobusStreamFactory:
     def refresh_current_thread_stream(self):
         """
         Refresh the stream for the current thread.
-        
+
         No locking needed because:
         - Each thread has its own isolated copy of thread-local storage
         - Only this thread can modify self._thread_local.stream_cache
@@ -299,13 +301,14 @@ class ZerobusStreamFactory:
                 stream_cache["stream"].close()
             except Exception as e:
                 _logger.warning(f"Error closing old stream: {e}")
-        
+
         # Clear cache and create new stream
         self._thread_local.stream_cache = None
         self.get_or_create_stream()
         thread_id = threading.current_thread().ident
-        _logger.info(f"Refreshed stream for thread {thread_id} in table {self.table_properties.table_name}")
-
+        _logger.info(
+            f"Refreshed stream for thread {thread_id} in table {self.table_properties.table_name}"
+        )
 
     def close_all_streams(self):
         """

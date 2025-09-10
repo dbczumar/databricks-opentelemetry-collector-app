@@ -103,8 +103,10 @@ class Constants:
 
 def get_table_properties() -> TableProperties:
     """Get configured TableProperties for the UC table."""
-    from mlflow.genai.experimental.databricks_trace_otel_pb2 import Span as DeltaProtoSpan
-    
+    from mlflow.genai.experimental.databricks_trace_otel_pb2 import (
+        Span as DeltaProtoSpan,
+    )
+
     return TableProperties(
         table_name=Constants.UC_FULL_TABLE_NAME,
         descriptor_proto=DeltaProtoSpan.DESCRIPTOR,
